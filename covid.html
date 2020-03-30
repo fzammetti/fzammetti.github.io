@@ -1,0 +1,373 @@
+<!--suppress JSUnresolvedVariable -->
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+
+    <title>Super-simpler COVID-19 tracker</title>
+
+
+    <style>
+
+      body {
+        background-color : #ffffff;
+      }
+
+      .container {
+        margin-left : auto;
+        margin-right : auto;
+        width : 370px;
+      }
+
+      .dataTable {
+        background-color : #ffffff;
+        width : 100%;
+        padding : 4px;
+        margin-bottom : 30px;
+        box-shadow : 0 8px 18px 0 rgba(0, 0, 0, 0.2);
+        border-radius : 8px 8px 8px 8px;
+      }
+
+      .dataTableHeader {
+        background-color : #e0e0e0;
+        font-size : 120%;
+        height : 24px;
+      }
+
+      .dataTableElementLabel {
+        width : 160px;
+        font-weight : bold;
+      }
+
+      .updateInfo {
+        text-align : center;
+      }
+
+      .updateInfoTable {
+        border : 0;
+        margin-left : auto;
+        margin-right:auto;
+      }
+
+      .updateInfoCell {
+        text-align : left;
+      }
+
+      .altRow {
+        background-color : #f8f8f8;
+      }
+
+      #overlay {
+        background : #e0e0e0;
+        position : fixed;
+        height : 100%;
+        width : 100%;
+        z-index : 5000;
+        top : 0;
+        left : 0;
+        float : left;
+        text-align : center;
+        padding-top : 20%;
+        opacity : .80;
+      }
+      .spinner {
+        margin : 0 auto;
+        height : 64px;
+        width : 64px;
+        animation : rotate 0.8s infinite linear;
+        border : 5px solid #ff0000;
+        border-right-color : transparent;
+        border-radius : 50%;
+      }
+      @keyframes rotate {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+
+    </style>
+
+
+    <script>
+
+
+      // How frequently to automatically do data grabs.
+      const updateIntervalSeconds = 5 * 60; // Every 5 minutes
+
+      // Countdown to the next data grab.
+      let updateCountdown = 0;
+
+      // The date/time the last data grab was done.
+      let lastUpdate = null;
+
+      // The last batch of data that was retrieved.
+      const dataBatch = { world : null, us : null, state : null };
+
+      // The data stored in localStorage (includes: selected state).
+      const storedData = JSON.parse(window.localStorage.getItem("storedData")) || { selectedState : "Pennsylvania" };
+
+
+      /**
+      * Code to execute onLoad.
+      */
+      function init() {
+
+        // Set the state selection.
+        document.getElementById("selectedState").value = storedData.selectedState;
+
+        // Do initial data grab.
+        updateData();
+
+        // Do a data grab periodically, and count down to it.
+        setInterval(updateData, 1000);
+
+      } /* End init(). */
+
+
+      /**
+      * Go get updated data and display it.
+      *
+      * @param inForce True when the button is clicked to force an update.
+      */
+      async function updateData(inForce) {
+
+        // When the button is clicked, short-circuit the countdown and do the data grab now.
+        if (inForce) {
+          updateCountdown = 0;
+        }
+
+        // Countdown to the next data grab and do the grab when it's time.
+        updateCountdown = updateCountdown - 1;
+        document.getElementById("nextUpdate").innerHTML = updateCountdown.toString() + " seconds";
+        if (updateCountdown > 0) {
+          return;
+        }
+        updateCountdown = updateIntervalSeconds;
+        document.getElementById("nextUpdate").innerHTML = updateCountdown.toString() + " seconds";
+
+        // Show overlay mask and spinner.
+        document.getElementById("overlay").style.display = "";
+
+        // Go get data for the world, U.S. and state.
+        const worldResponse = await fetch("https://corona.lmao.ninja/all");
+        const usResponse = await fetch("https://corona.lmao.ninja/countries/USA");
+        const stateResponse = await fetch("https://corona.lmao.ninja/states");
+
+        // Parse out the world, U.S. and state data from the responses.
+        dataBatch.world = await worldResponse.json();
+        dataBatch.us = await usResponse.json();
+        dataBatch.state = await stateResponse.json();
+
+        // Record last update date/time.
+        lastUpdate = new Date();
+        document.getElementById("lastUpdate").innerHTML = prettyDate(lastUpdate);
+
+        // Display the world data.
+        document.getElementById("worldCases").innerHTML = numberWithCommas(dataBatch.world.cases);
+        document.getElementById("worldDeaths").innerHTML = numberWithCommas(dataBatch.world.deaths);
+        document.getElementById("worldRecovered").innerHTML = numberWithCommas(dataBatch.world.recovered);
+        document.getElementById("worldAsOf").innerHTML = prettyDate(new Date(dataBatch.world.updated));
+        document.getElementById("worldCFR").innerHTML =
+          ((dataBatch.world.deaths / dataBatch.world.cases) * 100).toFixed(2) + "%";
+
+        // Display the U.S. data.
+        document.getElementById("usCases").innerHTML = numberWithCommas(dataBatch.us.cases);
+        document.getElementById("usDeaths").innerHTML = numberWithCommas(dataBatch.us.deaths);
+        document.getElementById("usRecovered").innerHTML = numberWithCommas(dataBatch.us.recovered);
+        document.getElementById("usActive").innerHTML = numberWithCommas(dataBatch.us.active);
+        document.getElementById("usCritical").innerHTML = numberWithCommas(dataBatch.us.critical);
+        document.getElementById("usNewCasesToday").innerHTML = numberWithCommas(dataBatch.us.todayCases);
+        document.getElementById("usDeathsToday").innerHTML = numberWithCommas(dataBatch.us.todayDeaths);
+        document.getElementById("usCasesPerOneMillion").innerHTML = numberWithCommas(dataBatch.us.casesPerOneMillion);
+        document.getElementById("usDeathsPerOneMillion").innerHTML = numberWithCommas(dataBatch.us.deathsPerOneMillion);
+        document.getElementById("usCFR").innerHTML =
+          ((dataBatch.us.deaths / dataBatch.us.cases) * 100).toFixed(2) + "%";
+
+        populateState();
+
+        // Hide the overlay mask and spinner.
+        document.getElementById("overlay").style.display = "none";
+
+      } /* End updateData(). */
+
+
+      /**
+      * Populate the state data.  This is separate so that it can be called when the user selects a state.
+      */
+      function populateState() {
+
+        // Display the state data (filtering the data on state).
+        const stateData = dataBatch.state.filter(inValue => inValue.state === storedData.selectedState)[0];
+        document.getElementById("stateCases").innerHTML = numberWithCommas(stateData.cases);
+        document.getElementById("stateDeaths").innerHTML = numberWithCommas(stateData.deaths);
+        document.getElementById("stateActive").innerHTML = numberWithCommas(stateData.active);
+        document.getElementById("stateNewCasesToday").innerHTML = numberWithCommas(stateData.todayCases);
+        document.getElementById("stateDeathsToday").innerHTML = numberWithCommas(stateData.todayDeaths);
+        document.getElementById("stateCFR").innerHTML = ((stateData.deaths / stateData.cases).toFixed(2) * 100) + "%";
+
+      } /* End populateState(). */
+
+
+      /**
+      * Called when the user selects a new state.
+      */
+      function selectState() {
+
+        storedData.selectedState = document.getElementById("selectedState").value;
+        window.localStorage.setItem("storedData", JSON.stringify(storedData));
+        populateState();
+
+      } /* End selectState(). */
+
+
+      /**
+       * Formats a number as a string with comma separators.
+       *
+       * @param  inNumber The number to format.
+       * @return String   The number, in string form, with commas.
+       */
+      function numberWithCommas(inNumber) {
+
+        return inNumber.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+      } /* End numberWithCommas(). */
+
+
+      /**
+       * Return a string from a Date object in a "pretty" format for display.
+       *
+       * @param  inDate The Date object to format.
+       * @return String The date/time, as a string, in "date @ time" form.
+       */
+      function prettyDate(inDate) {
+
+        return `${inDate.toLocaleDateString()} @ ${inDate.toLocaleTimeString()}`
+
+      } /* End prettyDate(). */
+
+
+    </script>
+
+
+  </head>
+
+  <body onLoad="init();">
+
+    <!-- Overlay mask and spinner for when data is being retrieved. -->
+    <div id="overlay" style="display:none;">
+      <div class="spinner"></div>
+    </div>
+
+    <div class="container">
+
+      <!-- World data. -->
+      <table class="dataTable">
+        <tr><th colspan="2" class="dataTableHeader">World</th></tr>
+        <tr><td class="dataTableElementLabel">As Of: </td><td id="worldAsOf"></td></tr>
+        <tr class="altRow"><td class="dataTableElementLabel">Cases: </td><td id="worldCases"></td></tr>
+        <tr><td class="dataTableElementLabel">Deaths: </td><td id="worldDeaths"></td></tr>
+        <tr class="altRow"><td class="dataTableElementLabel">Recovered: </td><td id="worldRecovered"></td></tr>
+        <tr><td class="dataTableElementLabel">CFR: </td><td id="worldCFR"></td></tr>
+      </table>
+
+      <!-- U.S. data. -->
+      <table class="dataTable">
+        <tr><th colspan="2" class="dataTableHeader">United States</th></tr>
+        <tr><td class="dataTableElementLabel">Cases: </td><td id="usCases"></td></tr>
+        <tr class="altRow"><td class="dataTableElementLabel">Deaths: </td><td id="usDeaths"></td></tr>
+        <tr><td class="dataTableElementLabel">Recovered: </td><td id="usRecovered"></td></tr>
+        <tr class="altRow"><td class="dataTableElementLabel">Active Cases: </td><td id="usActive"></td></tr>
+        <tr><td class="dataTableElementLabel">Critical Cases: </td><td id="usCritical"></td></tr>
+        <tr class="altRow"><td class="dataTableElementLabel">New Cases Today: </td><td id="usNewCasesToday"></td></tr>
+        <tr><td class="dataTableElementLabel">Deaths Today: </td><td id="usDeathsToday"></td></tr>
+        <tr class="altRow"><td class="dataTableElementLabel">Cases Per Million: </td><td id="usCasesPerOneMillion"></td></tr>
+        <tr><td class="dataTableElementLabel">Deaths Per Million: </td><td id="usDeathsPerOneMillion"></td></tr>
+        <tr class="altRow"><td class="dataTableElementLabel">CFR: </td><td id="usCFR"></td></tr>
+      </table>
+
+      <!-- State data. -->
+      <table class="dataTable">
+        <tr><th colspan="2" class="dataTableHeader" style="padding-bottom:3px;">
+          <label for="selectedState"></label><select id="selectedState" onChange="selectState();">
+            <option value="Alabama">Alabama</option>
+            <option value="Alaska">Alaska</option>
+            <option value="Arizona">Arizona</option>
+            <option value="Arkansas">Arkansas</option>
+            <option value="California">California</option>
+            <option value="Colorado">Colorado</option>
+            <option value="Connecticut">Connecticut</option>
+            <option value="Delaware">Delaware</option>
+            <option value="Florida">Florida</option>
+            <option value="Georgia">Georgia</option>
+            <option value="Guam">Guam</option>
+            <option value="Hawaii">Hawaii</option>
+            <option value="Idaho">Idaho</option>
+            <option value="Illinois">Illinois</option>
+            <option value="Indiana">Indiana</option>
+            <option value="Iowa">Iowa</option>
+            <option value="Kansas">Kansas</option>
+            <option value="Kentucky">Kentucky</option>
+            <option value="Louisiana">Louisiana</option>
+            <option value="Maine">Maine</option>
+            <option value="Maryland">Maryland</option>
+            <option value="Massachusetts">Massachusetts</option>
+            <option value="Michigan">Michigan</option>
+            <option value="Minnesota">Minnesota</option>
+            <option value="Mississippi">Mississippi</option>
+            <option value="Missouri">Missouri</option>
+            <option value="Montana">Montana</option>
+            <option value="Nebraska">Nebraska</option>
+            <option value="Nevada">Nevada</option>
+            <option value="New Hampshire">New Hampshire</option>
+            <option value="New Jersey">New Jersey</option>
+            <option value="New Mexico">New Mexico</option>
+            <option value="New York">New York</option>
+            <option value="North Carolina">North Carolina</option>
+            <option value="North Dakota">North Dakota</option>
+            <option value="Ohio">Ohio</option>
+            <option value="Oklahoma">Oklahoma</option>
+            <option value="Oregon">Oregon</option>
+            <option value="Pennsylvania">Pennsylvania</option>
+            <option value="Puerto Rico">Puerto Rico</option>
+            <option value="Rhode Island">Rhode Island</option>
+            <option value="South Carolina">South Carolina</option>
+            <option value="South Dakota">South Dakota</option>
+            <option value="Tennessee">Tennessee</option>
+            <option value="Texas">Texas</option>
+            <option value="United States Virgin Islands">U.S. Virgin Islands</option>
+            <option value="Utah">Utah</option>
+            <option value="Vermont">Vermont</option>
+            <option value="Virginia">Virginia</option>
+            <option value="Washington">Washington</option>
+            <option value="District Of Columbia">Washington, D.C.</option>
+            <option value="West Virginia">West Virginia</option>
+            <option value="Wisconsin">Wisconsin</option>
+            <option value="Wyoming">Wyoming</option>
+          </select>
+        </th></tr>
+        <tr><td class="dataTableElementLabel">Cases: </td><td id="stateCases"></td></tr>
+        <tr class="altRow"><td class="dataTableElementLabel">Deaths: </td><td id="stateDeaths"></td></tr>
+        <tr><td class="dataTableElementLabel">Active Cases: </td><td id="stateActive"></td></tr>
+        <tr class="altRow"><td class="dataTableElementLabel">New Cases Today: </td><td id="stateNewCasesToday"></td></tr>
+        <tr><td class="dataTableElementLabel">Deaths Today: </td><td id="stateDeathsToday"></td></tr>
+        <tr class="altRow"><td class="dataTableElementLabel">CFR: </td><td id="stateCFR"></td></tr>
+      </table>
+
+      <!-- The update button and last update dispay. -->
+      <div class="updateInfo">
+        <input type="button" value="Update Now" onClick="updateData(true);">
+        <br><br>
+        <table class="updateInfoTable">
+          <tr><td class="updateInfoCell">Last Update:</td><td class="updateInfoCell" id="lastUpdate"></td></tr>
+          <tr><td class="updateInfoCell">Next Update:</td><td class="updateInfoCell" id="nextUpdate"></td></tr>
+        </table>
+      </div>
+
+    </div>
+
+  </body>
+
+</html>
