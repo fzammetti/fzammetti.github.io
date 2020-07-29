@@ -152,7 +152,7 @@
         document.getElementById("overlay").style.display = "";
 
         // Go get data for the world, U.S. and state.
-        const worldResponse = await fetch("https://corona.lmao.ninja/v2/all");
+        const worldResponse = await fetch("https://corona.lmao.ninja/v3/covid-19/all");
         const usResponse = await fetch("https://corona.lmao.ninja/v2/countries/USA");
         const stateResponse = await fetch("https://corona.lmao.ninja/v2/states");
 
